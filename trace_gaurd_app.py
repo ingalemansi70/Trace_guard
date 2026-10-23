@@ -13,6 +13,56 @@ st.set_page_config(
     layout="wide"
 )
 
+# ---------------- COMPACT UI STYLING ----------------
+st.markdown("""
+<style>
+    .block-container {
+        max-width: 1050px;
+        padding-top: 1.2rem;
+        padding-bottom: 0.8rem;
+    }
+
+    h1 {
+        font-size: 2.3rem !important;
+        margin-bottom: 0.15rem !important;
+    }
+
+    h2 {
+        font-size: 1.45rem !important;
+        margin-top: 0.5rem !important;
+        margin-bottom: 0.4rem !important;
+    }
+
+    h3 {
+        font-size: 1.15rem !important;
+        margin-top: 0.4rem !important;
+        margin-bottom: 0.3rem !important;
+    }
+
+    div.stButton > button,
+    div.stFormSubmitButton > button {
+        min-height: 2.8rem;
+        font-weight: 600;
+        border-radius: 8px;
+    }
+
+    div[data-testid="stMetric"] {
+        padding: 0.6rem;
+        border: 1px solid rgba(128, 128, 128, 0.25);
+        border-radius: 10px;
+    }
+
+    hr {
+        margin: 0.7rem 0 !important;
+    }
+
+    div[data-testid="stCaptionContainer"] {
+        font-size: 0.78rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+
 # ---------------- LOAD MODEL ----------------
 MODEL_PATH = Path(__file__).parent / "models" / "traceguard_model.joblib"
 
@@ -65,13 +115,15 @@ def extract_features(url):
     except ValueError:
         has_ip = 0
 
+    shortener_domains = [
+        "bit.ly", "tinyurl.com", "t.co",
+        "goo.gl", "is.gd"
+    ]
+
     uses_shortener = int(
         any(
             hostname == domain or hostname.endswith("." + domain)
-            for domain in [
-                "bit.ly", "tinyurl.com", "t.co",
-                "goo.gl", "is.gd"
-            ]
+            for domain in shortener_domains
         )
     )
 
@@ -110,8 +162,7 @@ def validate_url(url):
 
 
 # ---------------- COMMON HOMEPAGE REFERENCES ----------------
-# Illustrative demo reference values, not verified security scores.
-# Only exact homepages match; URLs with paths or query strings use the model.
+# Illustrative reference values, not verified security scores.
 KNOWN_HOMEPAGES = {
     "google.com": 1.0,
     "www.google.com": 1.0,
@@ -167,12 +218,12 @@ def get_homepage_reference(url):
 
 # ---------------- HEADER ----------------
 st.title("🛡️ TraceGuard")
-st.subheader("Digital Privacy & Phishing Risk Analyzer")
+st.caption("DIGITAL PRIVACY & PHISHING RISK ANALYZER")
 
 st.write(
     "Analyze URL characteristics to estimate potential phishing "
-    "and malicious-link risk. URLs are analyzed as text; this app "
-    "does not open or visit the submitted website."
+    "and malicious-link risk. Submitted URLs are analyzed as text; "
+    "this app does not visit the website."
 )
 
 st.divider()
@@ -184,13 +235,17 @@ st.header("🔎 URL Risk Analysis")
 with st.form("url_analysis_form"):
     url_input = st.text_input(
         "Enter a URL",
-        placeholder="Example: https://www.google.com/"
+        placeholder="https://www.google.com/"
     )
-    analyze = st.form_submit_button(
-        "Analyze URL",
-        type="primary",
-        use_container_width=True
-    )
+
+    _, button_col, _ = st.columns([1, 1.2, 1])
+
+    with button_col:
+        analyze = st.form_submit_button(
+            "🛡️ Analyze URL",
+            type="primary",
+            use_container_width=True
+        )
 
 
 if analyze:
@@ -207,37 +262,50 @@ if analyze:
 
     else:
         st.divider()
-        st.subheader("Analysis Result")
+        st.subheader("📊 Analysis Result")
 
         reference_risk = get_homepage_reference(url_input)
 
         if reference_risk is not None:
             risk_percentage = reference_risk
+
             st.success("Recognized website homepage")
+
             st.caption(
-                "This is an illustrative homepage reference estimate, "
+                "Illustrative homepage reference estimate, "
                 "not a verified security assessment."
             )
+
         else:
             feature_values = extract_features(url_input)
+
             input_features = pd.DataFrame(
                 [feature_values],
                 columns=feature_names
             )
 
             try:
-                prediction = int(model.predict(input_features)[0])
-                classes = list(model.classes_)
-
-                if not hasattr(model, "predict_proba") or 1 not in classes:
+                if not hasattr(model, "predict_proba"):
                     st.error(
-                        "This model cannot provide a malicious-risk "
-                        "probability for this input."
+                        "This model cannot provide a risk probability."
                     )
                     st.stop()
 
+                classes = list(model.classes_)
+
+                if 1 not in classes:
+                    st.error(
+                        "The model does not contain the expected "
+                        "malicious class."
+                    )
+                    st.stop()
+
+                prediction = int(model.predict(input_features)[0])
+
                 probabilities = model.predict_proba(input_features)[0]
+
                 malicious_index = classes.index(1)
+
                 risk_percentage = float(
                     probabilities[malicious_index] * 100
                 )
@@ -245,12 +313,15 @@ if analyze:
                 if prediction == 1:
                     st.error("⚠️ Potentially Malicious URL")
                 else:
-                    st.success("✅ Model classifies this URL as benign")
+                    st.success(
+                        "✅ Model classifies this URL as benign"
+                    )
 
             except Exception as error:
                 st.error(f"Could not analyze this URL: {error}")
                 st.stop()
 
+        # ---------------- RISK METRICS ----------------
         col1, col2 = st.columns(2)
 
         with col1:
@@ -268,8 +339,8 @@ if analyze:
                 st.error("Higher estimated risk")
 
         st.caption(
-            "Estimates may be incorrect. A low score does not guarantee "
-            "that a website is safe."
+            "Estimates may be incorrect. A low score does not "
+            "guarantee that a website is safe."
         )
 
         # ---------------- STRUCTURAL INDICATORS ----------------
@@ -288,9 +359,13 @@ if analyze:
             "Equals sign count": feature_values[7],
             "Slash count": feature_values[8],
             "Uses HTTPS": "Yes" if feature_values[9] else "No",
-            "IP address used as hostname": "Yes" if feature_values[10] else "No",
+            "IP address used as hostname": (
+                "Yes" if feature_values[10] else "No"
+            ),
             "Suspicious keyword matches": feature_values[11],
-            "Recognized URL shortener": "Yes" if feature_values[12] else "No"
+            "Recognized URL shortener": (
+                "Yes" if feature_values[12] else "No"
+            )
         }
 
         st.dataframe(
@@ -299,14 +374,15 @@ if analyze:
                 columns=["Indicator", "Value"]
             ),
             use_container_width=True,
-            hide_index=True
+            hide_index=True,
+            height=300
         )
 
 
 # ---------------- PRIVACY HABITS CHECK ----------------
 st.divider()
 st.header("🔐 Digital Privacy Self-Check")
-st.write("Select the habits you currently follow.")
+st.caption("Select the habits you currently follow.")
 
 habits = [
     "I use unique passwords for important accounts.",
@@ -318,21 +394,30 @@ habits = [
 
 selected_habits = []
 
-for habit in habits:
-    if st.checkbox(habit, key=habit):
-        selected_habits.append(habit)
+left_col, right_col = st.columns(2)
+
+for i, habit in enumerate(habits):
+    target_col = left_col if i % 2 == 0 else right_col
+
+    with target_col:
+        if st.checkbox(habit, key=habit):
+            selected_habits.append(habit)
 
 if st.button("Check My Privacy Habits"):
     score = len(selected_habits)
+
     st.progress(score / len(habits))
     st.write(f"Privacy habits score: **{score}/5**")
 
     if score <= 2:
         st.warning(
-            "Consider improving your account and browsing security habits."
+            "Consider improving your account and browsing "
+            "security habits."
         )
     elif score <= 4:
-        st.info("Good start! Review the habits you have not selected.")
+        st.info(
+            "Good start! Review the habits you have not selected."
+        )
     else:
         st.success(
             "Great! Continue maintaining these security habits."
@@ -341,7 +426,9 @@ if st.button("Check My Privacy Habits"):
 
 # ---------------- FOOTER ----------------
 st.divider()
+
 st.caption(
-    "TraceGuard | Educational project | Predictions may be incorrect. "
-    "Never rely on this tool alone to decide whether a link is safe."
+    "TraceGuard | Educational project | Predictions may be "
+    "incorrect. Never rely on this tool alone to decide whether "
+    "a link is safe."
 )
